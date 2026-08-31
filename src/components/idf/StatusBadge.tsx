@@ -61,6 +61,14 @@ const LABELS: Record<string, string> = {
   // Stock em entreposto (WarehouseStockStatus)
   Reserved: "Reservado",
   Blocked: "Bloqueado",
+  // Sobreposição de Área (mock — Registo de Área)
+  Conforme: "Conforme",
+  ConformeComReserva: "Conforme com reserva",
+  NaoConforme: "Não conforme",
+  // Instrumentos técnicos da Concessão (mock)
+  Missing: "Em falta",
+  // Licenciamento standalone (mock)
+  PrecheckVerification: "Em verificação de pré-condições",
 };
 
 /** Tons por estado — verde/sucesso, amarelo/em curso, azul/informativo, vermelho/bloqueado, cinza/neutro. */
@@ -124,6 +132,14 @@ const TONES: Record<string, string> = {
   // Stock em entreposto (WarehouseStockStatus)
   Reserved: "bg-warning/20 text-warning-foreground",
   Blocked: "bg-destructive/15 text-destructive",
+  // Sobreposição de Área (mock — Registo de Área)
+  Conforme: "bg-success/15 text-success",
+  ConformeComReserva: "bg-warning/20 text-warning-foreground",
+  NaoConforme: "bg-destructive/15 text-destructive",
+  // Instrumentos técnicos da Concessão (mock)
+  Missing: "bg-muted text-muted-foreground",
+  // Licenciamento standalone (mock)
+  PrecheckVerification: "bg-warning/20 text-warning-foreground",
 };
 
 export const StatusBadge = ({ status, className }: { status: string; className?: string }) => (

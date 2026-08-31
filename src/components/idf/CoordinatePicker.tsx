@@ -40,6 +40,10 @@ export const CoordinatePicker = ({
   const boundaryMarkers = useRef<maplibregl.Marker[]>([]);
   const onChangeRef = useRef(onChange);
   const boundaryRef = useRef(boundary);
+  // `map.isStyleLoaded()` só fica `true` depois de todos os tiles do mapa terminarem de carregar
+  // (fica `false` de novo a cada `fitBounds`/pan) — não serve para decidir se já se pode
+  // adicionar a fonte/camada da referência. `ready` fica `true` uma vez, no evento "load".
+  const ready = useRef(false);
   onChangeRef.current = onChange;
   boundaryRef.current = boundary;
 
@@ -52,6 +56,7 @@ export const CoordinatePicker = ({
       el.className =
         "flex h-5 w-5 items-center justify-center rounded-full border-2 border-white text-[9px] font-bold text-white opacity-90 shadow";
       el.style.backgroundColor = POLYGON_VERTEX_COLORS[index];
+      el.style.pointerEvents = "none"; // decorativo — não pode bloquear o clique para colocar a coordenada
       el.textContent = `P${index + 1}`;
       const point = polygon[key];
       return new maplibregl.Marker({ element: el }).setLngLat([point.longitude, point.latitude]).addTo(instance);
@@ -61,7 +66,7 @@ export const CoordinatePicker = ({
     const source = instance.getSource("reference-boundary") as maplibregl.GeoJSONSource | undefined;
     if (source) {
       source.setData(data);
-    } else if (instance.isStyleLoaded()) {
+    } else {
       instance.addSource("reference-boundary", { type: "geojson", data });
       instance.addLayer({
         id: "reference-boundary-fill",
@@ -98,6 +103,12 @@ export const CoordinatePicker = ({
     instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.current = instance;
 
+    // Corrige o mapa nascer com o contentor ainda sem o tamanho final (dentro de um Dialog a
+    // meio da animação) — sem isto o marcador fica mal posicionado/invisível.
+    const resizeObserver = new ResizeObserver(() => instance.resize());
+    resizeObserver.observe(container.current);
+    requestAnimationFrame(() => instance.resize());
+
     const m = new maplibregl.Marker({ draggable: true, color: "#16a34a" }).setLngLat(initialCenter);
     if (hasCoordinate(value)) m.addTo(instance);
     marker.current = m;
@@ -115,13 +126,16 @@ export const CoordinatePicker = ({
       if (boundaryHasArea && !hasCoordinate(value)) {
         instance.fitBounds(polygonBounds(boundaryRef.current!), { padding: 48, duration: 0, maxZoom: 15 });
       }
+      ready.current = true;
     });
 
     return () => {
+      resizeObserver.disconnect();
       instance.remove();
       map.current = null;
       marker.current = null;
       boundaryMarkers.current = [];
+      ready.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -138,7 +152,7 @@ export const CoordinatePicker = ({
   useEffect(() => {
     const instance = map.current;
     if (!instance || !boundary || !hasPolygonArea(boundary)) return;
-    if (instance.isStyleLoaded()) drawBoundary(instance, boundary);
+    if (ready.current) drawBoundary(instance, boundary);
     else instance.once("load", () => drawBoundary(instance, boundary));
   }, [boundary]);
 

@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Map as MapIcon } from "lucide-react";
-import { ResourceWorkspace } from "@/components/idf/ResourceWorkspace";
+import { ResourceWorkspace, type CreateFormContext } from "@/components/idf/ResourceWorkspace";
 import { EntityPicker } from "@/components/idf/EntityPicker";
 import { EntityLabel } from "@/components/idf/EntityLabel";
-import { BoundaryPicker } from "@/components/idf/BoundaryPicker";
-import { LocationFields } from "@/components/idf/LocationFields";
+import { PolygonBoundaryDrawer } from "@/components/idf/PolygonBoundaryDrawer";
 import { WorkflowActions } from "@/components/idf/WorkflowActions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,13 +19,18 @@ import {
   listConcessions,
   submitConcession,
 } from "@/modules/idf/api/concessions";
-import { loadActiveOperators } from "@/modules/idf/api/pickers";
+import { getForestArea } from "@/modules/idf/api/areas";
+import { loadActiveOperators, loadEligibleForestAreas } from "@/modules/idf/api/pickers";
 import { PERMISSION, SERVICE } from "@/modules/idf/config/modules";
 import { formatDate } from "@/lib/date";
+import { isPolygonWithinPolygon, polygonAreaHectares, polygonBoundsFree } from "@/lib/geoPolygon";
 import { useWorkflow } from "@/modules/idf/hooks/useWorkflow";
 import { useIdf } from "@/modules/idf/context/IdfContext";
 import { fieldError } from "@/modules/idf/hooks/useProblem";
-import type { ConcessionDto, ConcessionStatus, CreateConcessionRequest } from "@/modules/idf/types";
+import { ACQUISITION_METHODS, createExtension, getAreaCommitment, type AcquisitionMethod } from "@/modules/idf/mock/concessionProcess";
+import { buildInitialPhases, emptyCharges } from "@/modules/idf/mock/concessionPhases";
+import { ApiError } from "@/modules/idf/types";
+import type { ConcessionDto, ConcessionStatus, CoordinateDto, CreateConcessionRequest, PolygonDto } from "@/modules/idf/types";
 
 const TYPES: { value: ConcessionDto["type"]; label: string }[] = [
   { value: "ForestConcession", label: "Concessão florestal" },
@@ -33,15 +38,173 @@ const TYPES: { value: ConcessionDto["type"]; label: string }[] = [
   { value: "Other", label: "Outro" },
 ];
 
+/** Rectângulo envolvente da parcela, só para satisfazer o contrato real (`boundary`, 4 pontos fixos) — nunca editado à mão. */
+const boundsToPolygonDto = (boundary: CoordinateDto[]): PolygonDto => {
+  const [[minLng, minLat], [maxLng, maxLat]] = polygonBoundsFree(boundary);
+  return {
+    point1: { latitude: maxLat, longitude: minLng },
+    point2: { latitude: maxLat, longitude: maxLng },
+    point3: { latitude: minLat, longitude: maxLng },
+    point4: { latitude: minLat, longitude: minLng },
+  };
+};
+
+/**
+ * Campo `acquisitionMethod`/`parentAreaId`/`parcelBoundary` são só do protótipo (extensão mock) —
+ * nunca vão no `CreateConcessionRequest` real, que continua a receber `areaHectares`/`boundary`
+ * derivados da parcela (ver `submit`). `location` deixa de ser editável aqui — é sempre herdada da
+ * Área-mãe (o utilizador só a preenche uma vez, no Registo de Área).
+ */
+type ConcessionFormValue = Omit<CreateConcessionRequest, "areaHectares" | "boundary"> & {
+  acquisitionMethod: AcquisitionMethod;
+  parentAreaId: string;
+  parcelBoundary: CoordinateDto[];
+};
+
+/**
+ * Componente próprio (não uma função solta) porque usa hooks (`useQuery`) — o `render` do
+ * `ResourceWorkspace` só é chamado enquanto o diálogo está aberto, por isso um hook chamado
+ * directamente dentro do callback violaria as regras dos hooks (nº de hooks variável entre renders).
+ */
+const ConcessionCreateFields = ({ value, setValue, errors }: CreateFormContext<ConcessionFormValue>) => {
+  const { data: area } = useQuery({
+    queryKey: ["idf", "areas", value.parentAreaId],
+    queryFn: async () => {
+      const loaded = await getForestArea(value.parentAreaId);
+      // Pré-preenche a localização da concessão a partir da Área-mãe (ajustável a seguir).
+      setValue((prev) => ({ ...prev, location: { ...loaded.location, commune: prev.location.commune || loaded.location.commune } }));
+      return loaded;
+    },
+    enabled: !!value.parentAreaId,
+  });
+  const { data: commitment } = useQuery({
+    queryKey: ["idf", "concessions", "area-commitment", value.parentAreaId],
+    queryFn: () => getAreaCommitment(value.parentAreaId),
+    enabled: !!value.parentAreaId,
+  });
+  const available = area && commitment ? area.calculatedAreaHectares - commitment.committedHectares : null;
+  const parcelArea = polygonAreaHectares(value.parcelBoundary);
+
+  return (
+    <>
+      <EntityPicker
+        id="operator"
+        label="Operador florestal"
+        queryKey={["idf", "picker", "active-operators"]}
+        load={loadActiveOperators}
+        value={value.forestOperatorId}
+        onChange={(v) => setValue((prev) => ({ ...prev, forestOperatorId: v }))}
+        emptyMessage="Não existem operadores activos."
+        error={fieldError(errors, "forestOperatorId")}
+      />
+
+      <EntityPicker
+        id="parent-area"
+        label="Área registada"
+        queryKey={["idf", "picker", "eligible-areas"]}
+        load={loadEligibleForestAreas}
+        value={value.parentAreaId}
+        onChange={(v) => setValue((prev) => ({ ...prev, parentAreaId: v, parcelBoundary: [] }))}
+        emptyMessage="Sem áreas com parecer Conforme/ConformeComReserva."
+        error={fieldError(errors, "parentAreaId")}
+      />
+      {area && (
+        <p className="text-sm text-muted-foreground">
+          Área disponível para concessão: <span className="font-medium text-foreground">{available?.toFixed(2)} ha</span> de{" "}
+          <span className="font-medium text-foreground">{area.calculatedAreaHectares} ha</span> totais.
+        </p>
+      )}
+
+      {area && (
+        <PolygonBoundaryDrawer
+          label="Parcela a conceder"
+          value={value.parcelBoundary}
+          onChange={(parcelBoundary) => setValue((prev) => ({ ...prev, parcelBoundary }))}
+          referenceBoundary={area.boundary}
+          helper="Desenhe a parcela dentro do polígono a tracejado (limite da Área registada)."
+          error={fieldError(errors, "parcelBoundary")}
+        />
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="type">Tipo</Label>
+          <Select value={value.type} onValueChange={(v) => setValue((prev) => ({ ...prev, type: v as ConcessionDto["type"] }))}>
+            <SelectTrigger id="type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TYPES.map((type) => (
+                <SelectItem key={type.value} value={type.value}>
+                  {type.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="acquisition-method">Via de atribuição</Label>
+          <Select
+            value={value.acquisitionMethod}
+            onValueChange={(v) => setValue((prev) => ({ ...prev, acquisitionMethod: v as AcquisitionMethod }))}
+          >
+            <SelectTrigger id="acquisition-method">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ACQUISITION_METHODS.map((method) => (
+                <SelectItem key={method.value} value={method.value}>
+                  {method.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="start">Início da validade</Label>
+          <Input
+            id="start"
+            type="date"
+            value={value.validityPeriod.startDate}
+            onChange={(e) => setValue((prev) => ({ ...prev, validityPeriod: { ...prev.validityPeriod, startDate: e.target.value } }))}
+          />
+          {fieldError(errors, "validityPeriod.startDate") && (
+            <p className="text-sm text-destructive">{fieldError(errors, "validityPeriod.startDate")}</p>
+          )}
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="end">Fim da validade</Label>
+          <Input
+            id="end"
+            type="date"
+            value={value.validityPeriod.endDate}
+            onChange={(e) => setValue((prev) => ({ ...prev, validityPeriod: { ...prev.validityPeriod, endDate: e.target.value } }))}
+          />
+          {fieldError(errors, "validityPeriod.endDate") && (
+            <p className="text-sm text-destructive">{fieldError(errors, "validityPeriod.endDate")}</p>
+          )}
+        </div>
+        <div className="space-y-2 sm:col-span-2">
+          <Label>Área (ha) — calculada a partir da parcela</Label>
+          <Input readOnly disabled value={parcelArea ? parcelArea.toFixed(2) : "—"} />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Localização administrativa herdada da Área-mãe. Anexos e restante tramitação (Fases A–H) preenchem-se no processo completo, depois de criada.
+      </p>
+    </>
+  );
+};
+
 const ConcessionsPage = () => {
   const workflow = useWorkflow("Concessão actualizada");
   const { selectConcession, selectedConcessionId } = useIdf();
 
   return (
-    <ResourceWorkspace<ConcessionDto, CreateConcessionRequest>
+    <ResourceWorkspace<ConcessionDto, ConcessionFormValue>
       service={SERVICE.CONCESSIONS}
       title="Concessões"
-      description="Áreas florestais atribuídas a operadores activos, com validade, área e polígono geográfico."
+      description="Parcelas recortadas de uma Área registada, atribuídas a operadores activos, com validade e tramitação legal."
       crumbs={[{ label: "Cadastro" }, { label: "Concessões" }]}
       queryKey="concessions"
       searchPlaceholder="Pesquisar por código"
@@ -76,107 +239,55 @@ const ConcessionsPage = () => {
       create={{
         label: "Nova concessão",
         dialogTitle: "Registar concessão",
-        dialogDescription: "Apenas operadores activos podem receber concessões (regra 9.7).",
+        dialogDescription: "A concessão é sempre uma parcela recortada dentro do polígono de uma Área registada (regra 9.7).",
         wide: true,
         initial: () => ({
           forestOperatorId: "",
           type: "ForestConcession",
           validityPeriod: { startDate: "", endDate: "" },
-          areaHectares: 0,
-          boundary: {
-            point1: { latitude: 0, longitude: 0 },
-            point2: { latitude: 0, longitude: 0 },
-            point3: { latitude: 0, longitude: 0 },
-            point4: { latitude: 0, longitude: 0 },
-          },
           location: { province: "", municipality: "", commune: "" },
+          acquisitionMethod: "SimplifiedContracting",
+          parentAreaId: "",
+          parcelBoundary: [],
         }),
-        submit: createConcession,
-        render: ({ value, setValue, errors }) => (
-          <>
-            <EntityPicker
-              id="operator"
-              label="Operador florestal"
-              queryKey={["idf", "picker", "active-operators"]}
-              load={loadActiveOperators}
-              value={value.forestOperatorId}
-              onChange={(v) => setValue((prev) => ({ ...prev, forestOperatorId: v }))}
-              emptyMessage="Não existem operadores activos."
-              error={fieldError(errors, "forestOperatorId")}
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="type">Tipo</Label>
-                <Select
-                  value={value.type}
-                  onValueChange={(v) => setValue((prev) => ({ ...prev, type: v as ConcessionDto["type"] }))}
-                >
-                  <SelectTrigger id="type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TYPES.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="start">Início da validade</Label>
-                <Input
-                  id="start"
-                  type="date"
-                  value={value.validityPeriod.startDate}
-                  onChange={(e) =>
-                    setValue((prev) => ({ ...prev, validityPeriod: { ...prev.validityPeriod, startDate: e.target.value } }))
-                  }
-                />
-                {fieldError(errors, "validityPeriod.startDate") && (
-                  <p className="text-sm text-destructive">{fieldError(errors, "validityPeriod.startDate")}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="end">Fim da validade</Label>
-                <Input
-                  id="end"
-                  type="date"
-                  value={value.validityPeriod.endDate}
-                  onChange={(e) =>
-                    setValue((prev) => ({ ...prev, validityPeriod: { ...prev.validityPeriod, endDate: e.target.value } }))
-                  }
-                />
-                {fieldError(errors, "validityPeriod.endDate") && (
-                  <p className="text-sm text-destructive">{fieldError(errors, "validityPeriod.endDate")}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="area">Área (hectares)</Label>
-                <Input
-                  id="area"
-                  type="number"
-                  min={0}
-                  value={value.areaHectares || ""}
-                  onChange={(e) => setValue((prev) => ({ ...prev, areaHectares: Number(e.target.value) }))}
-                />
-                {fieldError(errors, "areaHectares") && (
-                  <p className="text-sm text-destructive">{fieldError(errors, "areaHectares")}</p>
-                )}
-              </div>
-            </div>
-            <LocationFields
-              value={value.location}
-              onChange={(location) => setValue((prev) => ({ ...prev, location }))}
-              errors={errors}
-            />
-            <BoundaryPicker
-              value={value.boundary}
-              onChange={(boundary) => setValue((prev) => ({ ...prev, boundary }))}
-              error={fieldError(errors, "boundary")}
-            />
-          </>
-        ),
+        // Cria a concessão (mock — ver `api/concessions.ts`) com a área/boundary derivadas da
+        // parcela (localização herdada da Área-mãe), depois a extensão mock (n.º de processo,
+        // parcela, fases A–H) — ver `modules/idf/mock/concessionProcess.ts` e
+        // `modules/idf/mock/concessionPhases.ts`. Os
+        // anexos da Fase A e a restante tramitação preenchem-se depois, no processo completo.
+        submit: async ({ acquisitionMethod, parentAreaId, parcelBoundary, ...request }) => {
+          if (!parentAreaId) throw new ApiError({ status: 422, errors: { parentAreaId: ["Seleccione a Área registada."] } });
+          const area = await getForestArea(parentAreaId);
+
+          const errors: Record<string, string[]> = {};
+          if (parcelBoundary.length < 3) errors.parcelBoundary = ["A parcela precisa de pelo menos 3 vértices."];
+          else if (!isPolygonWithinPolygon(parcelBoundary, area.boundary)) errors.parcelBoundary = ["A parcela tem de ficar dentro do polígono da Área."];
+
+          const parcelAreaHectares = Number(polygonAreaHectares(parcelBoundary).toFixed(2));
+          if (!errors.parcelBoundary) {
+            const { committedHectares } = await getAreaCommitment(parentAreaId);
+            if (committedHectares + parcelAreaHectares > area.calculatedAreaHectares) {
+              errors.parcelBoundary = [
+                `A parcela (${parcelAreaHectares} ha) excede a área disponível (${(area.calculatedAreaHectares - committedHectares).toFixed(2)} ha de ${area.calculatedAreaHectares} ha totais).`,
+              ];
+            }
+          }
+          if (Object.keys(errors).length > 0) throw new ApiError({ status: 422, title: "Dados inválidos", errors });
+
+          const concession = await createConcession({ ...request, areaHectares: parcelAreaHectares, boundary: boundsToPolygonDto(parcelBoundary) });
+          await createExtension({
+            concessionId: concession.id,
+            method: acquisitionMethod,
+            province: request.location.province,
+            parentAreaId,
+            parcelBoundary,
+            parcelAreaHectares,
+            phases: buildInitialPhases(),
+            charges: emptyCharges(),
+          });
+          return concession;
+        },
+        render: (ctx) => <ConcessionCreateFields {...ctx} />,
       }}
       detail={(item) => (
         <div className="space-y-5">
@@ -208,20 +319,6 @@ const ConcessionsPage = () => {
                   ? [item.location.commune, item.location.municipality, item.location.province].filter(Boolean).join(", ")
                   : "Não definida"}
               </dd>
-            </div>
-            <div className="col-span-2">
-              <dt className="text-muted-foreground">Área geográfica (polígono)</dt>
-              {item.boundary ? (
-                <dd className="mt-1 grid grid-cols-2 gap-1 text-xs">
-                  {(["point1", "point2", "point3", "point4"] as const).map((key, index) => (
-                    <span key={key} className="font-medium text-foreground">
-                      V{index + 1}: {item.boundary![key].latitude}, {item.boundary![key].longitude}
-                    </span>
-                  ))}
-                </dd>
-              ) : (
-                <dd className="font-medium">Não definida</dd>
-              )}
             </div>
           </dl>
 
@@ -265,6 +362,9 @@ const ConcessionsPage = () => {
                 },
               ]}
             />
+            <p className="text-xs text-muted-foreground">
+              A tramitação em 8 fases (A–H) e o gate de fiscal residente ficam no processo completo.
+            </p>
           </div>
 
           {item.status === "Active" && (

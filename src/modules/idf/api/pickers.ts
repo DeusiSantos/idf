@@ -1,6 +1,7 @@
 import type { PickerOption } from "@/components/idf/EntityPicker";
 import { listOperators } from "@/modules/idf/api/operators";
 import { listConcessions } from "@/modules/idf/api/concessions";
+import { listForestAreas } from "@/modules/idf/api/areas";
 import { listInventories } from "@/modules/idf/api/inventories";
 import { listManagementPlans } from "@/modules/idf/api/managementPlans";
 import { listQuotas } from "@/modules/idf/api/quotas";
@@ -121,6 +122,14 @@ export const loadExportProcesses = async (): Promise<PickerOption[]> => {
 export const loadRoles = async (): Promise<PickerOption[]> => {
   const { items } = await listRoles({ isActive: true, pageSize: 200 });
   return items.map((r) => ({ value: r.id, label: r.name ?? shortId(r.id), hint: r.code ?? undefined }));
+};
+
+/** Áreas elegíveis para Licenciamento (Aba 1) — só Conforme/ConformeComReserva (nunca NaoConforme). */
+export const loadEligibleForestAreas = async (): Promise<PickerOption[]> => {
+  const { items } = await listForestAreas({ pageSize: 200 });
+  return items
+    .filter((a) => a.overlapVerdict !== "NaoConforme")
+    .map((a) => ({ value: a.id, label: a.code, hint: `${a.calculatedAreaHectares} ha · ${a.overlapVerdict}` }));
 };
 
 export const loadCompletedInspections = async (): Promise<PickerOption[]> => {

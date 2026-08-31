@@ -1,26 +1,18 @@
-import { call, cleanParams, http } from "@/modules/idf/api/http";
-import { CONCESSION_STATUS, CONCESSION_TYPE, toEnumName, toEnumOrdinal } from "@/modules/idf/types/enums";
-import type {
-  ConcessionDto,
-  ConcessionStatus,
-  ConcessionType,
-  CreateConcessionRequest,
-  PagedQuery,
-  PagedResult,
-} from "@/modules/idf/types";
+import { createMockStore, newMockId } from "@/modules/idf/mock/store";
+import { ApiError } from "@/modules/idf/types";
+import type { ConcessionDto, ConcessionStatus, ConcessionType, CreateConcessionRequest, PagedQuery, PagedResult } from "@/modules/idf/types";
 
-const BASE = "idf/concessions";
+/**
+ * Concessões — mock local (sem chamadas à API real), para poder testar a tramitação completa
+ * (fases A–H, `concessionPhases.ts`) sem depender de um backend disponível. Decisão do
+ * utilizador: substitui a versão anterior ligada à API real (`POST idf/concessions`, etc.).
+ * Mesma forma de um `api/*.ts` real — `list*`/`get*`/`create*`/transições devolvem `Promise`,
+ * `PagedResult`, erros `ApiError` — para `ResourceWorkspace`/`EntityPicker`/`WorkflowActions`/
+ * `useWorkflow` e todo o resto do código (que importa por nome desta ficheiro) continuarem a
+ * funcionar sem nenhuma alteração.
+ */
 
-interface RawConcession extends Omit<ConcessionDto, "type" | "status"> {
-  type: number;
-  status: number;
-}
-
-const mapConcession = (raw: RawConcession): ConcessionDto => ({
-  ...raw,
-  type: toEnumName(CONCESSION_TYPE, raw.type),
-  status: toEnumName(CONCESSION_STATUS, raw.status),
-});
+const store = createMockStore<ConcessionDto>("idf.mock.concessions");
 
 export interface ConcessionListQuery extends PagedQuery {
   forestOperatorId?: string;
@@ -29,34 +21,71 @@ export interface ConcessionListQuery extends PagedQuery {
   type?: ConcessionType;
 }
 
-export const listConcessions = async (query: ConcessionListQuery = {}): Promise<PagedResult<ConcessionDto>> => {
-  const raw = await call<PagedResult<RawConcession>>(
-    http.get(BASE, {
-      params: cleanParams({
-        Page: query.page,
-        PageSize: query.pageSize,
-        ForestOperatorId: query.forestOperatorId,
-        Code: query.code,
-        Status: query.status && query.status !== "all" ? toEnumOrdinal(CONCESSION_STATUS, query.status) : undefined,
-        Type: query.type ? toEnumOrdinal(CONCESSION_TYPE, query.type) : undefined,
-        IsActive: query.isActive,
-        IsDeleted: query.isDeleted,
-      }),
-    }),
-  );
-  return { ...raw, items: raw.items.map(mapConcession) };
+export const listConcessions = (query: ConcessionListQuery = {}): Promise<PagedResult<ConcessionDto>> =>
+  store.list({
+    page: query.page,
+    pageSize: query.pageSize,
+    filter: (item) =>
+      (!query.forestOperatorId || item.forestOperatorId === query.forestOperatorId) &&
+      (!query.code || item.code.toLowerCase().includes(query.code.toLowerCase())) &&
+      (!query.status || query.status === "all" || item.status === query.status) &&
+      (!query.type || item.type === query.type),
+  });
+
+export const getConcession = (id: string): Promise<ConcessionDto> => store.get(id);
+
+/** `CON-{ano}-{sequência 3 dígitos}` — sequência conta globalmente por ano (código simples, distinto do processo — ver `concessionProcess.ts`). */
+function generateCode(year: number): string {
+  const sequence = store.all().filter((c) => c.code.startsWith(`CON-${year}-`)).length + 1;
+  return `CON-${year}-${String(sequence).padStart(3, "0")}`;
+}
+
+export const createConcession = (request: CreateConcessionRequest): Promise<ConcessionDto> => {
+  const errors: Record<string, string[]> = {};
+  if (!request.forestOperatorId) errors.forestOperatorId = ["Seleccione o operador florestal."];
+  if (!request.validityPeriod.startDate) errors["validityPeriod.startDate"] = ["Obrigatória."];
+  if (!request.validityPeriod.endDate) errors["validityPeriod.endDate"] = ["Obrigatória."];
+  if (!request.areaHectares || request.areaHectares <= 0) errors.areaHectares = ["Área tem de ser maior que zero."];
+  if (Object.keys(errors).length > 0) throw new ApiError({ status: 422, title: "Dados inválidos", errors });
+
+  const now = new Date().toISOString();
+  const concession: ConcessionDto = {
+    id: newMockId(),
+    forestOperatorId: request.forestOperatorId,
+    code: generateCode(new Date().getFullYear()),
+    type: request.type,
+    status: "Draft",
+    validityPeriod: request.validityPeriod,
+    areaHectares: request.areaHectares,
+    boundary: request.boundary,
+    location: request.location,
+    createdAt: now,
+    createdBy: null,
+    updatedAt: null,
+    updatedBy: null,
+    isDeleted: false,
+    isActive: true,
+    deletedAt: null,
+    deletedBy: null,
+  };
+  return store.create(concession);
 };
 
-export const getConcession = (id: string): Promise<ConcessionDto> =>
-  call<RawConcession>(http.get(`${BASE}/${id}`)).then(mapConcession);
+const ALLOWED_TRANSITIONS = {
+  submit: { from: ["Draft"] as ConcessionStatus[], to: "Submitted" as ConcessionStatus },
+  "begin-review": { from: ["Submitted"] as ConcessionStatus[], to: "UnderReview" as ConcessionStatus },
+  approve: { from: ["Submitted", "UnderReview"] as ConcessionStatus[], to: "Approved" as ConcessionStatus },
+  activate: { from: ["Approved"] as ConcessionStatus[], to: "Active" as ConcessionStatus },
+};
 
-export const createConcession = (request: CreateConcessionRequest): Promise<ConcessionDto> =>
-  call<RawConcession>(
-    http.post(BASE, { ...request, type: toEnumOrdinal(CONCESSION_TYPE, request.type) }),
-  ).then(mapConcession);
-
-const transition = (id: string, action: string) =>
-  call<RawConcession>(http.post(`${BASE}/${id}/${action}`)).then(mapConcession);
+const transition = async (id: string, action: keyof typeof ALLOWED_TRANSITIONS): Promise<ConcessionDto> => {
+  const current = await store.get(id);
+  const rule = ALLOWED_TRANSITIONS[action];
+  if (!rule.from.includes(current.status)) {
+    throw new ApiError({ status: 422, detail: `Transição inválida — a concessão está em "${current.status}".` });
+  }
+  return store.update(id, { status: rule.to, updatedAt: new Date().toISOString() });
+};
 
 export const submitConcession = (id: string) => transition(id, "submit");
 export const beginConcessionReview = (id: string) => transition(id, "begin-review");

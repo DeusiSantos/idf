@@ -15,8 +15,10 @@ import MapPage from "@/modules/idf/pages/dashboard/MapPage";
 import OperatorsListPage from "@/modules/idf/pages/operators/OperatorsListPage";
 import OperatorWizardPage from "@/modules/idf/pages/operators/OperatorWizardPage";
 import OperatorDetailPage from "@/modules/idf/pages/operators/OperatorDetailPage";
+import ForestAreasPage from "@/modules/idf/pages/areas/ForestAreasPage";
 import ConcessionsPage from "@/modules/idf/pages/concessions/ConcessionsPage";
 import ConcessionDetailPage from "@/modules/idf/pages/concessions/ConcessionDetailPage";
+import ConcessionTramitationPage from "@/modules/idf/pages/concessions/ConcessionTramitationPage";
 import InventoriesPage from "@/modules/idf/pages/inventories/InventoriesPage";
 import InventoryDetailPage from "@/modules/idf/pages/inventories/InventoryDetailPage";
 import ManagementPlansPage from "@/modules/idf/pages/plans/ManagementPlansPage";
@@ -26,6 +28,7 @@ import QuotaDetailPage from "@/modules/idf/pages/quotas/QuotaDetailPage";
 import LicensesPage from "@/modules/idf/pages/licenses/LicensesPage";
 import LicenseWizardPage from "@/modules/idf/pages/licenses/LicenseWizardPage";
 import LicenseDetailPage from "@/modules/idf/pages/licenses/LicenseDetailPage";
+import LicensingPage from "@/modules/idf/pages/licensing/LicensingPage";
 import ExploitationPage from "@/modules/idf/pages/exploitation/ExploitationPage";
 import ExploitationDetailPage from "@/modules/idf/pages/exploitation/ExploitationDetailPage";
 import ProductionPage from "@/modules/idf/pages/production/ProductionPage";
@@ -72,8 +75,10 @@ const App = () => (
               <Route path="/idf/operators" element={<OperatorsListPage />} />
               <Route path="/idf/operators/new" element={<OperatorWizardPage />} />
               <Route path="/idf/operators/:id" element={<OperatorDetailPage />} />
+              <Route path="/idf/areas" element={<ForestAreasPage />} />
               <Route path="/idf/concessions" element={<ConcessionsPage />} />
               <Route path="/idf/concessions/:id" element={<ConcessionDetailPage />} />
+              <Route path="/idf/concessions/:id/tramitacao" element={<ConcessionTramitationPage />} />
               <Route path="/idf/inventories" element={<InventoriesPage />} />
               <Route path="/idf/inventories/:id" element={<InventoryDetailPage />} />
               <Route path="/idf/management-plans" element={<ManagementPlansPage />} />
@@ -83,6 +88,7 @@ const App = () => (
               <Route path="/idf/licenses" element={<LicensesPage />} />
               <Route path="/idf/licenses/new" element={<LicenseWizardPage />} />
               <Route path="/idf/licenses/:id" element={<LicenseDetailPage />} />
+              <Route path="/idf/licensing" element={<LicensingPage />} />
               <Route path="/idf/exploitation" element={<ExploitationPage />} />
               <Route path="/idf/exploitation/:id" element={<ExploitationDetailPage />} />
               <Route path="/idf/production" element={<ProductionPage />} />

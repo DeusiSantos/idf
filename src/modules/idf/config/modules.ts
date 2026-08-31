@@ -17,6 +17,8 @@ import {
   Coins,
   LayoutDashboard,
   Settings,
+  LandPlot,
+  Stamp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +42,14 @@ export const SERVICE = {
   REVENUE: "IDF_45",
   REPORTS: "IDF_47",
   ADMIN: "IDF_48",
+  /**
+   * ⚠️ Pseudo-códigos de protótipo — Registo de Área e Licenciamento standalone ainda não têm
+   * ServiceCode real no backend (secção 3), por isso nunca usam o formato "IDF_NN" (evita colidir
+   * com um código futuro). Servem só para o gating de UI via `usePermission`, que hoje ignora o
+   * código específico e olha apenas para `user.isActive`.
+   */
+  AREAS: "MOCK_AREAS",
+  LICENSING: "MOCK_LICENSING",
 } as const;
 
 export type ServiceCode = (typeof SERVICE)[keyof typeof SERVICE];
@@ -83,6 +93,7 @@ export const NAV_GROUPS: IdfNavGroup[] = [
     label: "Cadastro",
     modules: [
       { service: SERVICE.OPERATORS, label: "Operadores", path: "/idf/operators", icon: Users },
+      { service: SERVICE.AREAS, label: "Registo de Área", path: "/idf/areas", icon: LandPlot },
       { service: SERVICE.CONCESSIONS, label: "Concessões", path: "/idf/concessions", icon: Map },
     ],
   },
@@ -98,6 +109,7 @@ export const NAV_GROUPS: IdfNavGroup[] = [
     label: "Exploração",
     modules: [
       { service: SERVICE.LICENSES, label: "Licenças", path: "/idf/licenses", icon: FileCheck },
+      { service: SERVICE.LICENSING, label: "Licenciamento", path: "/idf/licensing", icon: Stamp },
       { service: SERVICE.EXPLOITATION, label: "Exploração", path: "/idf/exploitation", icon: Axe },
       { service: SERVICE.PRODUCTION, label: "Produção", path: "/idf/production", icon: Boxes },
     ],

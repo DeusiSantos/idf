@@ -18,6 +18,8 @@ interface LocationFieldsProps {
   errors?: Record<string, string[]>;
   /** Prefixo dos nomes de campo no ProblemDetails (por omissão "location", ex. "location.province"). */
   errorPrefix?: string;
+  /** Bloqueia a escolha manual de província (ex.: Registo de Área, onde a província é derivada do polígono). */
+  lockProvince?: boolean;
 }
 
 const normalize = (value: string) => value.trim().toLowerCase();
@@ -28,7 +30,7 @@ const normalize = (value: string) => value.trim().toLowerCase();
  * livre com sugestões, porque a cobertura da API é incompleta — uma falha de rede nunca bloqueia
  * o preenchimento do formulário.
  */
-export const LocationFields = ({ value, onChange, errors, errorPrefix = "location" }: LocationFieldsProps) => {
+export const LocationFields = ({ value, onChange, errors, errorPrefix = "location", lockProvince = false }: LocationFieldsProps) => {
   const { toast } = useToast();
   const [provincias, setProvincias] = useState<AngolaLocation[]>([]);
   const [municipios, setMunicipios] = useState<AngolaLocation[]>([]);
@@ -136,9 +138,9 @@ export const LocationFields = ({ value, onChange, errors, errorPrefix = "locatio
     <div className="grid gap-4 sm:grid-cols-3">
       <div className="space-y-2">
         <Label htmlFor="loc-provincia">Província</Label>
-        <Select value={provinciaSlug} onValueChange={handleProvinciaChange} disabled={loadingProvincias}>
+        <Select value={provinciaSlug} onValueChange={handleProvinciaChange} disabled={loadingProvincias || lockProvince}>
           <SelectTrigger id="loc-provincia">
-            <SelectValue placeholder="Seleccione a província" />
+            <SelectValue placeholder={lockProvince ? "Derivada do polígono" : "Seleccione a província"} />
           </SelectTrigger>
           <SelectContent>
             {provincias.map((p) => (

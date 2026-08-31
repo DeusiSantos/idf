@@ -10,6 +10,10 @@ export interface WorkflowAction {
   /** Estados em que a acção é válida. */
   enabledFor: string[];
   onRun: () => void | Promise<void>;
+  /** Condição extra além de estado+permissão (ex.: fiscal residente activo). Falso desactiva o botão sem o esconder. */
+  guard?: () => boolean;
+  /** Mostrado como title do botão quando `guard` bloqueia a acção. */
+  guardMessage?: string;
 }
 
 interface WorkflowActionsProps {
@@ -30,17 +34,21 @@ export const WorkflowActions = ({ service, status, actions, isBusy }: WorkflowAc
 
   return (
     <div className="flex flex-wrap gap-2">
-      {available.map((action) => (
-        <Button
-          key={action.key}
-          variant={action.variant ?? "default"}
-          size="sm"
-          disabled={isBusy}
-          onClick={() => action.onRun()}
-        >
-          {action.label}
-        </Button>
-      ))}
+      {available.map((action) => {
+        const blocked = action.guard ? !action.guard() : false;
+        return (
+          <Button
+            key={action.key}
+            variant={action.variant ?? "default"}
+            size="sm"
+            disabled={isBusy || blocked}
+            title={blocked ? action.guardMessage : undefined}
+            onClick={() => action.onRun()}
+          >
+            {action.label}
+          </Button>
+        );
+      })}
     </div>
   );
 };

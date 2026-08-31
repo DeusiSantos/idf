@@ -68,6 +68,12 @@ export const BoundaryPicker = ({
     instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     map.current = instance;
 
+    // Corrige o mapa nascer com o contentor ainda sem o tamanho final (dentro de um Dialog a
+    // meio da animação) — sem isto os marcadores ficam mal posicionados/invisíveis.
+    const resizeObserver = new ResizeObserver(() => instance.resize());
+    resizeObserver.observe(container.current);
+    requestAnimationFrame(() => instance.resize());
+
     instance.on("load", () => {
       instance.addSource("boundary", {
         type: "geojson",
@@ -108,6 +114,7 @@ export const BoundaryPicker = ({
     });
 
     return () => {
+      resizeObserver.disconnect();
       instance.remove();
       map.current = null;
       markers.current = [];
