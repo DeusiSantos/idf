@@ -13,6 +13,8 @@ interface PendingPaymentButtonProps {
   enabledFor: string[];
   status: string;
   disabled?: boolean;
+  /** Pré-preenche o valor (ex.: estimativa calculada a partir de preços por espécie) — continua sempre editável antes de confirmar. */
+  initialAmount?: number;
   onConfirm: (amount: number, currency: string) => void | Promise<void>;
 }
 
@@ -26,11 +28,12 @@ export const PendingPaymentButton = ({
   enabledFor,
   status,
   disabled,
+  initialAmount,
   onConfirm,
 }: PendingPaymentButtonProps) => {
   const canRun = usePermission(service, permission);
   const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState(0);
+  const [amount, setAmount] = useState(initialAmount ?? 0);
   const [currency, setCurrency] = useState("AOA");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -48,7 +51,15 @@ export const PendingPaymentButton = ({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => {
+          setAmount(initialAmount ?? 0);
+          setOpen(true);
+        }}
+      >
         Marcar pendente de pagamento
       </Button>
       <DialogContent>

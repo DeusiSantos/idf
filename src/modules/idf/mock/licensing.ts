@@ -1,6 +1,7 @@
 import { ApiError, type PagedResult } from "@/modules/idf/types";
 import type { PickerOption } from "@/components/idf/EntityPicker";
 import { createMockStore, newMockId, type MockStore } from "@/modules/idf/mock/store";
+import { getSpeciesPriceByCode } from "@/modules/idf/mock/speciesPricing";
 import { hashPolygon } from "@/lib/geoPolygon";
 import type {
   BeekeepingLicenseDto,
@@ -93,7 +94,13 @@ export const createExploitationLicense = (request: CreateExploitationLicenseRequ
     if (line.treeCount > line.cuttingLimit) errors[`lines.${index}.treeCount`] = ["Nº de árvores acima do limite de abate."];
   });
   if (Object.keys(errors).length > 0) throw new ApiError({ status: 422, errors });
-  return exploitationStore.create({ ...baseFields(), ...request });
+
+  const estimatedFeeAmount = request.lines.reduce((sum, line) => {
+    const price = getSpeciesPriceByCode(line.speciesCode);
+    return sum + (price ? price.pricePerM3 * line.volume : 0);
+  }, 0);
+
+  return exploitationStore.create({ ...baseFields(), ...request, estimatedFeeAmount });
 };
 
 export const hashString = (s: string): number => {

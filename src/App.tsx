@@ -29,6 +29,7 @@ import LicensesPage from "@/modules/idf/pages/licenses/LicensesPage";
 import LicenseWizardPage from "@/modules/idf/pages/licenses/LicenseWizardPage";
 import LicenseDetailPage from "@/modules/idf/pages/licenses/LicenseDetailPage";
 import LicensingPage from "@/modules/idf/pages/licensing/LicensingPage";
+import ExploitationLicenseWizardPage from "@/modules/idf/pages/licensing/ExploitationLicenseWizardPage";
 import ExploitationPage from "@/modules/idf/pages/exploitation/ExploitationPage";
 import ExploitationDetailPage from "@/modules/idf/pages/exploitation/ExploitationDetailPage";
 import ProductionPage from "@/modules/idf/pages/production/ProductionPage";
@@ -89,6 +90,7 @@ const App = () => (
               <Route path="/idf/licenses/new" element={<LicenseWizardPage />} />
               <Route path="/idf/licenses/:id" element={<LicenseDetailPage />} />
               <Route path="/idf/licensing" element={<LicensingPage />} />
+              <Route path="/idf/licensing/exploitation/new" element={<ExploitationLicenseWizardPage />} />
               <Route path="/idf/exploitation" element={<ExploitationPage />} />
               <Route path="/idf/exploitation/:id" element={<ExploitationDetailPage />} />
               <Route path="/idf/production" element={<ProductionPage />} />

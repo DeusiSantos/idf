@@ -13,6 +13,8 @@ interface LicensingWorkflowPanelProps {
   feeAmount: number | null;
   paymentConfirmed: boolean;
   verificationCode: string | null;
+  /** Estimativa calculada na criação (ex.: preço/m³ × volume) — pré-preenche "Marcar pendente de pagamento", nunca substitui a confirmação manual. */
+  estimatedFeeAmount?: number;
   isBusy: boolean;
   onSubmit: () => void;
   onVerify: () => void;
@@ -35,6 +37,7 @@ export const LicensingWorkflowPanel = ({
   feeAmount,
   paymentConfirmed,
   verificationCode,
+  estimatedFeeAmount,
   isBusy,
   onSubmit,
   onVerify,
@@ -85,6 +88,7 @@ export const LicensingWorkflowPanel = ({
           status={status}
           enabledFor={["PrecheckVerification"]}
           disabled={isBusy}
+          initialAmount={estimatedFeeAmount}
           onConfirm={onMarkPendingPayment}
         />
         {status === "PendingPayment" && feeAmount !== null && !paymentConfirmed && (

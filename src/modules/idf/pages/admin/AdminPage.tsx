@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Trash2, Trees, UserCheck, Users, UserX } from "lucide-react";
+import { Coins, FileText, Trash2, Trees, UserCheck, Users, UserX } from "lucide-react";
 import { EntityPicker } from "@/components/idf/EntityPicker";
 import { PageHeader } from "@/components/idf/PageHeader";
+import { formatKwanza } from "@/components/idf/PaymentPanel";
 import { ResourceWorkspace } from "@/components/idf/ResourceWorkspace";
 import { StatusBadge } from "@/components/idf/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createDocumentType,
@@ -31,6 +34,7 @@ import {
   updateUserProfile,
 } from "@/modules/idf/api/admin";
 import { loadRoles } from "@/modules/idf/api/pickers";
+import { listSpeciesPrices, upsertSpeciesPrice } from "@/modules/idf/mock/speciesPricing";
 import { SERVICE } from "@/modules/idf/config/modules";
 import { fieldError, toProblem } from "@/modules/idf/hooks/useProblem";
 import { useToast } from "@/hooks/use-toast";
@@ -196,6 +200,110 @@ const SpeciesEditForm = ({
           Eliminar
         </Button>
       </div>
+    </div>
+  );
+};
+
+/**
+ * Preço por m³ (AOA), por espécie — definido pelo administrador, usado no Licenciamento
+ * (Exploração Florestal) para estimar a taxa a liquidar por linha. Mock local, sem endpoint no
+ * backend (não existe tabela de preços na SIGAFLO/DRF-02) — decisão de produto pedida pelo
+ * utilizador. Não é um `ResourceWorkspace` porque cruza duas fontes (catálogo real de espécies +
+ * preços mock) em vez de ser um recurso único.
+ */
+const SpeciesPricingWorkspace = () => {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  const { data: speciesResult, isLoading } = useQuery({
+    queryKey: ["idf", "admin-species-all"],
+    queryFn: () => listForestSpecies({ pageSize: 500, isActive: true }),
+  });
+  const { data: prices } = useQuery({ queryKey: ["idf", "species-prices"], queryFn: listSpeciesPrices });
+  const priceByCode = new Map((prices?.items ?? []).map((p) => [p.speciesCode, p]));
+
+  const save = useMutation({
+    mutationFn: (vars: { code: string; price: number }) => upsertSpeciesPrice(vars.code, vars.price),
+    onSuccess: (_result, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["idf", "species-prices"] });
+      setDrafts((d) => {
+        const next = { ...d };
+        delete next[vars.code];
+        return next;
+      });
+      toast({ title: "Preço actualizado" });
+    },
+    onError: (error) => toast({ variant: "destructive", title: "Não foi possível guardar", description: toProblem(error).detail }),
+  });
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Preço por m³ (AOA) por espécie — usado no Licenciamento (Exploração Florestal) para estimar a taxa a liquidar de cada linha.
+      </p>
+      <Card className="overflow-hidden border-border/70 shadow-sm">
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-6">
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ) : !speciesResult || speciesResult.items.length === 0 ? (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              Sem espécies activas — regista primeiro em Administração → Espécies Florestais.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Código</TableHead>
+                    <TableHead>Nome comum</TableHead>
+                    <TableHead>Preço actual</TableHead>
+                    <TableHead>Novo preço (AOA/m³)</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {speciesResult.items.map((s) => {
+                    const current = priceByCode.get(s.code);
+                    const draft = drafts[s.code] ?? "";
+                    const numericDraft = Number(draft);
+                    return (
+                      <TableRow key={s.id} className="even:bg-muted/20">
+                        <TableCell className="font-medium">{s.code}</TableCell>
+                        <TableCell>{s.commonName}</TableCell>
+                        <TableCell>
+                          {current ? formatKwanza(current.pricePerM3) : <span className="text-muted-foreground">Não definido</span>}
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={0}
+                            className="w-32"
+                            placeholder={current ? String(current.pricePerM3) : "0"}
+                            value={draft}
+                            onChange={(e) => setDrafts((d) => ({ ...d, [s.code]: e.target.value }))}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            disabled={save.isPending || !draft || numericDraft <= 0}
+                            onClick={() => save.mutate({ code: s.code, price: numericDraft })}
+                          >
+                            Guardar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };
@@ -656,13 +764,17 @@ const AdminPage = () => (
   <div className="space-y-6">
     <PageHeader
       title="Administração"
-      description="Parametrização transversal: utilizadores, espécies florestais e tipos de documento."
+      description="Parametrização transversal: utilizadores, espécies florestais, preços do Licenciamento e tipos de documento."
       crumbs={[{ label: "Transversal" }, { label: "Administração" }]}
     />
     <Tabs defaultValue="users" className="space-y-4">
-      <TabsList>
+      <TabsList className="flex h-auto flex-wrap gap-1">
         <TabsTrigger value="users">Utilizadores</TabsTrigger>
         <TabsTrigger value="species">Espécies Florestais</TabsTrigger>
+        <TabsTrigger value="speciesPricing">
+          <Coins className="mr-1.5 h-3.5 w-3.5" />
+          Preços (Licenciamento)
+        </TabsTrigger>
         <TabsTrigger value="documentTypes">Tipos de Documento</TabsTrigger>
       </TabsList>
       <TabsContent value="users">
@@ -670,6 +782,9 @@ const AdminPage = () => (
       </TabsContent>
       <TabsContent value="species">
         <SpeciesWorkspace />
+      </TabsContent>
+      <TabsContent value="speciesPricing">
+        <SpeciesPricingWorkspace />
       </TabsContent>
       <TabsContent value="documentTypes">
         <DocumentTypesWorkspace />

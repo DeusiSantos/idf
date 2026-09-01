@@ -48,7 +48,6 @@ export interface ForestAreaDto extends ReadOnlyDto {
   code: string;
   designation: string;
   boundary: CoordinateDto[];
-  declaredAreaHectares: number;
   calculatedAreaHectares: number;
   location: ForestAreaLocationDto;
   igcaSketchFileReference: string;
@@ -66,7 +65,6 @@ export interface ForestAreaDto extends ReadOnlyDto {
 export interface CreateForestAreaRequest {
   designation: string;
   boundary: CoordinateDto[];
-  declaredAreaHectares: number;
   location: ForestAreaLocationDto;
   igcaSketchFileReference: string | null;
   descriptiveMemoryFileReference: string | null;

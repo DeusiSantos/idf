@@ -56,9 +56,12 @@ export interface ExploitationLicenseDto extends LicensingBaseFields {
   lines: ExploitationSpeciesLine[];
   destination: ExploitationDestination;
   processingUnitId: string | null;
+  /** Soma de preço/m³ (Administração → Preços) × volume por linha, calculada na criação — pré-preenche o "Marcar pendente de pagamento", nunca substitui a confirmação manual. */
+  estimatedFeeAmount: number;
 }
 
-export type CreateExploitationLicenseRequest = Omit<ExploitationLicenseDto, keyof LicensingBaseFields>;
+/** `estimatedFeeAmount` é sempre calculado pelo mock a partir dos preços por espécie — nunca vem do formulário. */
+export type CreateExploitationLicenseRequest = Omit<ExploitationLicenseDto, keyof LicensingBaseFields | "estimatedFeeAmount">;
 
 /* ---------------------------------------------------- Aba 2 · Lenha, Carvão e PFNL (PR-11) */
 

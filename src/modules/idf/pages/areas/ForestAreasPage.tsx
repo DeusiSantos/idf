@@ -121,12 +121,11 @@ const ForestAreasPage = () => (
     create={{
       label: "Nova área",
       dialogTitle: "Registar área",
-      dialogDescription: "O polígono desenhado determina a área calculada e a localização — nunca a área declarada.",
+      dialogDescription: "O polígono desenhado (via os vértices por baixo do mapa) determina a área calculada e a localização.",
       wide: true,
       initial: () => ({
         designation: "",
         boundary: [],
-        declaredAreaHectares: 0,
         location: { province: "", municipality: "", commune: "" },
         igcaSketchFileReference: null,
         descriptiveMemoryFileReference: null,
@@ -164,34 +163,16 @@ const ForestAreasPage = () => (
 
             <PolygonBoundaryDrawer value={value.boundary} onChange={handleBoundaryChange} error={fieldError(errors, "boundary")} />
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="area-declared">Área declarada (ha)</Label>
-                <Input
-                  id="area-declared"
-                  type="number"
-                  min={0}
-                  value={value.declaredAreaHectares || ""}
-                  onChange={(e) => setValue((prev) => ({ ...prev, declaredAreaHectares: Number(e.target.value) }))}
-                />
-                {fieldError(errors, "declaredAreaHectares") && (
-                  <p className="text-sm text-destructive">{fieldError(errors, "declaredAreaHectares")}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label>Área calculada (ha)</Label>
-                <Input readOnly disabled value={calculatedArea ? calculatedArea.toFixed(2) : "—"} />
-                <p className="text-xs text-muted-foreground">
-                  Derivada da geometria do polígono — é este valor, nunca o declarado, que determina a competência decisória.
-                </p>
-              </div>
+            <div className="space-y-2">
+              <Label>Área calculada (ha)</Label>
+              <Input readOnly disabled value={calculatedArea ? calculatedArea.toFixed(2) : "—"} />
+              <p className="text-xs text-muted-foreground">Derivada da geometria do polígono — determina a competência decisória.</p>
             </div>
 
             <LocationFields
               value={value.location}
               onChange={(location) => setValue((prev) => ({ ...prev, location }))}
               errors={errors}
-              lockProvince
             />
 
             <FileUploadField
@@ -287,10 +268,6 @@ const ForestAreasPage = () => (
         <PolygonBoundaryDrawer readOnly value={item.boundary} onChange={() => undefined} />
 
         <dl className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <dt className="text-muted-foreground">Área declarada</dt>
-            <dd className="font-medium">{item.declaredAreaHectares.toLocaleString("pt-AO")} ha</dd>
-          </div>
           <div>
             <dt className="text-muted-foreground">Área calculada</dt>
             <dd className="font-medium">{item.calculatedAreaHectares.toLocaleString("pt-AO")} ha</dd>

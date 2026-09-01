@@ -1,3 +1,4 @@
+import { Flame, Hexagon, PawPrint, Trees } from "lucide-react";
 import { PageHeader } from "@/components/idf/PageHeader";
 import { LicensingCampaignHeader } from "@/components/idf/LicensingCampaignHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -5,6 +6,13 @@ import ExploitationLicenseTab from "@/modules/idf/pages/licensing/ExploitationLi
 import FirewoodLicenseTab from "@/modules/idf/pages/licensing/FirewoodLicenseTab";
 import FaunaLicenseTab from "@/modules/idf/pages/licensing/FaunaLicenseTab";
 import BeekeepingLicenseTab from "@/modules/idf/pages/licensing/BeekeepingLicenseTab";
+
+const TABS = [
+  { value: "exploitation", label: "Exploração Florestal", icon: Trees },
+  { value: "firewood", label: "Lenha, Carvão e PFNL", icon: Flame },
+  { value: "fauna", label: "Recursos Faunísticos", icon: PawPrint },
+  { value: "beekeeping", label: "Apicultura", icon: Hexagon },
+] as const;
 
 /**
  * Licenciamento standalone — via independente, sem concessão prévia (diferente da Licença Anual
@@ -23,11 +31,17 @@ const LicensingPage = () => (
     <LicensingCampaignHeader />
 
     <Tabs defaultValue="exploitation">
-      <TabsList className="flex h-auto flex-wrap gap-1">
-        <TabsTrigger value="exploitation">Exploração Florestal</TabsTrigger>
-        <TabsTrigger value="firewood">Lenha, Carvão e PFNL</TabsTrigger>
-        <TabsTrigger value="fauna">Recursos Faunísticos</TabsTrigger>
-        <TabsTrigger value="beekeeping">Apicultura</TabsTrigger>
+      <TabsList className="grid h-auto w-full grid-cols-2 gap-2 rounded-xl bg-transparent p-0 sm:grid-cols-4">
+        {TABS.map((tab) => (
+          <TabsTrigger
+            key={tab.value}
+            value={tab.value}
+            className="flex flex-col items-center gap-1.5 rounded-xl border border-border/70 bg-card px-3 py-3 text-xs font-semibold text-muted-foreground shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md data-[state=active]:border-primary data-[state=active]:bg-primary/5 data-[state=active]:text-primary data-[state=active]:shadow-md"
+          >
+            <tab.icon className="h-5 w-5" />
+            <span className="text-center leading-tight">{tab.label}</span>
+          </TabsTrigger>
+        ))}
       </TabsList>
       <TabsContent value="exploitation" className="mt-4">
         <ExploitationLicenseTab />

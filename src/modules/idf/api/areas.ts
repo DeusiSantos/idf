@@ -106,8 +106,6 @@ export const createForestArea = async (request: CreateForestAreaRequest): Promis
   if (!request.designation.trim()) errors.designation = ["A designação é obrigatória."];
   if (request.boundary.length < 3) errors.boundary = ["O polígono precisa de pelo menos 3 vértices."];
   else if (hasSelfIntersection(request.boundary)) errors.boundary = ["O polígono tem auto-intersecção — ajuste os vértices."];
-  if (!request.declaredAreaHectares || request.declaredAreaHectares <= 0)
-    errors.declaredAreaHectares = ["Indique a área declarada."];
   if (!request.igcaSketchFileReference) errors.igcaSketchFileReference = ["O croquis IGCA é obrigatório."];
   if (!request.legalSituation.trim()) errors.legalSituation = ["Descreva a situação jurídica do terreno."];
   // Memória descritiva só é obrigatória se não houver inventário florestal anterior anexado.
@@ -135,7 +133,6 @@ export const createForestArea = async (request: CreateForestAreaRequest): Promis
     code,
     designation: request.designation,
     boundary: request.boundary,
-    declaredAreaHectares: request.declaredAreaHectares,
     calculatedAreaHectares,
     location: request.location,
     igcaSketchFileReference: request.igcaSketchFileReference as string,

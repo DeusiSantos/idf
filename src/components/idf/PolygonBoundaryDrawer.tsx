@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Crosshair, Eraser, Hexagon, Undo2 } from "lucide-react";
+import { Crosshair, Eraser, Hexagon, MapPinPlus, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ANGOLA_CENTER, OSM_STYLE } from "@/lib/mapStyle";
 import { hasSelfIntersection, polygonBoundsFree, polygonCentroidFree, polygonRingFree } from "@/lib/geoPolygon";
+import { cn } from "@/lib/utils";
 import type { CoordinateDto } from "@/modules/idf/types";
 
 export interface PolygonOverlay {
@@ -34,16 +35,18 @@ const REFERENCE_COLOR = "#0ea5e9";
 const round = (n: number) => Number(n.toFixed(6));
 
 /**
- * Desenho de polígono de N vértices no mapa — generalização de `BoundaryPicker` (fixo a 4 vértices,
- * específico da Concessão) para o polígono livre da Área. Clique acrescenta vértice, arrastar
- * ajusta, "Remover último" desfaz, "Limpar" reinicia. Reutiliza `ANGOLA_CENTER`/`OSM_STYLE`.
+ * Desenho de polígono de N vértices — generalização de `BoundaryPicker` (fixo a 4 vértices,
+ * específico da Concessão) para o polígono livre da Área. Os vértices entram sempre por
+ * formulário ("Adicionar ponto"/GPS + os campos de latitude/longitude por baixo do mapa) — nunca
+ * por clique no mapa (decisão do utilizador) — mas, uma vez lançados, podem arrastar-se no mapa
+ * para ajuste fino; o arrasto actualiza os mesmos campos. Reutiliza `ANGOLA_CENTER`/`OSM_STYLE`.
  */
 export const PolygonBoundaryDrawer = ({
   label = "Polígono da área",
   value,
   onChange,
   error,
-  helper = "Clique no mapa para acrescentar vértices, ou arraste um vértice existente para ajustar.",
+  helper = "Use \"Adicionar ponto\" e preencha a latitude/longitude de cada vértice (ou \"Adicionar no GPS\"), depois ajuste arrastando-o no mapa se precisar.",
   readOnly = false,
   referenceBoundary,
   overlayPolygons,
@@ -55,8 +58,7 @@ export const PolygonBoundaryDrawer = ({
   // Fica `true` uma vez, quando as fontes/camadas ficam prontas (evento "load"). Não usar
   // `map.isStyleLoaded()` aqui: essa função só devolve `true` depois de TODOS os tiles do
   // mapa terminarem de carregar — o que fica `false` outra vez sempre que se dá um `fitBounds`/pan
-  // para uma zona nova (novos tiles a pedir). Cliques a acrescentar vértices logo a seguir a
-  // enquadrar a Área-mãe ficavam silenciosamente ignorados por causa disto.
+  // para uma zona nova (novos tiles a pedir).
   const ready = useRef(false);
   const onChangeRef = useRef(onChange);
   const valueRef = useRef(value);
@@ -141,12 +143,16 @@ export const PolygonBoundaryDrawer = ({
   };
 
   const rebuildMarkers = (instance: maplibregl.Map) => {
+    // Vértices lançados por formulário, mas arrastáveis no mapa para ajuste fino (não readOnly).
     markers.current.forEach((m) => m.remove());
     markers.current = valueRef.current.map((point, index) => {
       const el = document.createElement("div");
-      el.className =
-        "flex h-6 w-6 cursor-move items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(0,0,0,0.35)]";
+      el.className = cn(
+        "flex h-6 w-6 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow-[0_2px_6px_rgba(0,0,0,0.35)]",
+        !readOnly && "cursor-move",
+      );
       el.style.backgroundColor = VERTEX_COLOR;
+      if (readOnly) el.style.pointerEvents = "none";
       el.textContent = `${index + 1}`;
 
       const marker = new maplibregl.Marker({ element: el, draggable: !readOnly }).setLngLat([point.longitude, point.latitude]).addTo(instance);
@@ -222,12 +228,6 @@ export const PolygonBoundaryDrawer = ({
       ready.current = true;
     });
 
-    if (!readOnly) {
-      instance.on("click", (e) => {
-        onChangeRef.current([...valueRef.current, { latitude: round(e.lngLat.lat), longitude: round(e.lngLat.lng) }]);
-      });
-    }
-
     return () => {
       resizeObserver.disconnect();
       instance.remove();
@@ -239,14 +239,17 @@ export const PolygonBoundaryDrawer = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reconstrói marcadores + polígono sempre que o número de vértices muda (o arrastar já actualiza sem recriar).
+  // Reconstrói marcadores + polígono sempre que os vértices mudam — inclui editar a
+  // latitude/longitude de um ponto já existente pelos campos do formulário, não só
+  // acrescentar/remover. `value` muda de referência a cada edição (os `onChange` do formulário são
+  // sempre imutáveis), por isso serve de dependência directa.
   useEffect(() => {
     const instance = map.current;
     if (!instance || !ready.current) return;
     rebuildMarkers(instance);
     drawPolygon(instance);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value.length]);
+  }, [value]);
 
   useEffect(() => {
     const instance = map.current;
@@ -259,6 +262,30 @@ export const PolygonBoundaryDrawer = ({
     if (!instance || !ready.current) return;
     drawOverlayPolygons(instance);
   }, [overlayPolygons]);
+
+  /**
+   * Acrescenta um vértice. Sem `referenceBoundary` (Registo de Área) começa em branco
+   * (0.000, 0.000) — nunca com um valor adivinhado — para o utilizador preencher a
+   * latitude/longitude exactas nos campos por baixo do mapa. Com `referenceBoundary` (parcela da
+   * Concessão), a Área-mãe já define onde a parcela pode ficar, por isso o vértice nasce lá
+   * dentro: combinação do centróide com um vértice da Área (a rodar a cada novo ponto, para não
+   * empilhar todos no mesmo sítio) — sempre dentro da Área para polígonos convexos, aproximação
+   * razoável para os restantes.
+   */
+  const addPoint = () => {
+    if (referenceBoundary && referenceBoundary.length >= 3) {
+      const [centroidLng, centroidLat] = polygonCentroidFree(referenceBoundary);
+      const anchor = referenceBoundary[value.length % referenceBoundary.length];
+      const t = 0.35;
+      const next = {
+        latitude: round(centroidLat + (anchor.latitude - centroidLat) * t),
+        longitude: round(centroidLng + (anchor.longitude - centroidLng) * t),
+      };
+      onChange([...value, next]);
+      return;
+    }
+    onChange([...value, { latitude: 0, longitude: 0 }]);
+  };
 
   const addAtGps = () => {
     if (!navigator.geolocation) return;
@@ -277,7 +304,11 @@ export const PolygonBoundaryDrawer = ({
       <div className="flex items-center justify-between">
         <Label>{label}</Label>
         {!readOnly && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={addPoint}>
+              <MapPinPlus className="mr-2 h-3.5 w-3.5" />
+              Adicionar ponto
+            </Button>
             <Button type="button" variant="outline" size="sm" onClick={addAtGps}>
               <Crosshair className="mr-2 h-3.5 w-3.5" />
               Adicionar no GPS
